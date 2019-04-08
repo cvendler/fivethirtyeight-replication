@@ -1,0 +1,252 @@
+---
+title: "FiveThirtyEight Replication"
+author: "Céline Vendler"
+output: html_document
+---
+
+[Link to Original Article](https://fivethirtyeight.com/features/both-republicans-and-democrats-have-an-age-problem/)
+
+```{r setup, include=FALSE}
+
+# Set document settings
+
+knitr::opts_chunk$set(echo = FALSE, 
+                      message = FALSE,
+                      error = FALSE, 
+                      warning = FALSE)
+
+# Load "ggthemes" and "fivethirtyeight" libraries in order to design the plot to
+# resemble as much as possible the FiveThirtyEight "Average Age of New Members
+# of Congress" plot
+
+library(ggthemes)
+library(fivethirtyeight)
+
+# Load "lubridate" library in order to work with dates more easily and
+# efficiently
+
+library(lubridate)
+
+# Load "data.table" library in order to have access to the "shift"" function
+
+library(data.table)
+library(tidyverse)
+
+```
+
+```{r read_data}
+
+# Read in data
+
+data("congress_age")
+
+```
+
+```{r manipulate_data}
+
+# Create dataset for Republican congresspeople
+
+rep_data <- congress_age %>% 
+  
+  # Create "year" column by using Lubridate's "year" function to extract years
+  # from "termstart" column
+  
+  mutate(year = year(termstart)) %>% 
+  
+  # Filter the data to keep only Republican congresspeople who are not incumbent
+  # (who are new)
+  
+  filter(party == "R", 
+         !incumbent) %>% 
+  
+  # Group data by year and party in order to perform calculations below
+  group_by(year, party) %>% 
+  
+  # Calculate sum of new Republican congresspeople's ages and number of new
+  # Republican congresspeople each year to calculate rolling two-term average
+  # age later
+  
+  summarize(sum_age = sum(age), 
+            n = n())
+  
+
+# Create tibble with lagged values for sum of new Republican congrespeople's
+# ages to calculate rolling two-term average age later
+
+rep_age_lag = as_tibble(shift(rep_data$sum_age, n = 1, type = "lag")) %>% 
+  
+  # Rename resulting column "age_lag"
+  
+  rename(age_lag = value)
+  
+
+# Create tibble with lagged values for number of new Republican congresspeople
+# to calculate rolling two-term average age later
+
+rep_n_lag = as_tibble(shift(rep_data$n, n = 1, type = "lag")) %>% 
+  
+  # Rename resulting column "n_lag"
+  
+  rename(n_lag = value)
+  
+
+# Create new dataset combining all datasets created above for Republican
+# congresspeople
+
+rep_data <- bind_cols(rep_data, rep_age_lag, rep_n_lag) %>% 
+  
+  # Create rolling two-term average age column
+  
+  mutate(roll_avg = (sum_age + age_lag)/(n + n_lag)) %>% 
+  
+  # Keep only values for the congresses beginning in 1949 and beyond
+  
+  filter(year >= 1949) %>% 
+  
+  # Select only salient variables
+  
+  select(year, party, roll_avg)
+
+
+# Repeat process for Democratic congresspeople
+# Create dataset for Democratic congresspeople
+
+dem_data <- congress_age %>% 
+  
+  # Create "year" column by using Lubridate's "year" function to extract years
+  # from "termstart" column
+  
+  mutate(year = year(termstart)) %>% 
+  
+  # Filter the data to keep only Democratic congresspeople who are not incumbent
+  # (who are new)
+  
+  filter(party == "D", 
+         !incumbent) %>% 
+  
+  # Group data by year and party in order to perform calculations below
+  
+  group_by(year, party) %>% 
+  
+  # Calculate sum of new Democratic congresspeople's ages and number of new
+  # Democratic congresspeople each year to calculate rolling two-term average
+  # age later
+  
+  summarize(sum_age = sum(age), 
+            n = n())
+
+
+# Create tibble with lagged values for sum of new Democratic congresspeople's
+# ages to calculate rolling two-term average age later
+
+dem_age_lag = as_tibble(shift(dem_data$sum_age, n = 1, type = "lag")) %>% 
+  
+  # Rename resulting column "age_lag"
+  
+  rename(age_lag = value)
+
+
+# Create tibble with lagged values for number of new Democratic congresspeople's
+# ages to calculate rolling two-term average age later
+
+dem_n_lag = as_tibble(shift(dem_data$n, n = 1, type = "lag")) %>% 
+  
+  # Rename resulting column "n_lag"
+  
+  rename(n_lag = value)
+
+
+# Create new dataset comining all datasets created above for Democratic
+# congresspeople
+
+dem_data <- bind_cols(dem_data, dem_age_lag, dem_n_lag) %>% 
+  
+  # Create rolling two-term average age column
+  
+  mutate(roll_avg = (sum_age + age_lag)/(n + n_lag)) %>% 
+  
+  # Keep only values for the congresses beginning in 1949 and beyond
+  
+  filter(year >= 1949) %>% 
+  
+  # Select only salient variables
+  
+  select(year, party, roll_avg)
+
+
+# Create dataset to plot using ggplot
+
+data_to_plot <- bind_rows(rep_data, dem_data)
+
+```
+
+```{r plot_data}
+
+  # Plot data_to_plot, setting "year" as the independent variable, setting
+  # "roll_avg" as the dependent variable, and coloring according to party
+
+  ggplot(data_to_plot, aes(x = year, y = roll_avg, color = party)) + 
+  
+  # Make the graph a line graph, setting the line thickness to 1 and removing
+  # the legend from view
+  
+  geom_line(size = 1, show.legend = FALSE) + 
+  
+  # Set x-axis ticks to begin at year 1950, to end at year 2010, and to occur at
+  # intervals of 10 years; label x-axis ticks according to year
+  
+  scale_x_continuous(breaks = seq(1950, 2010, by = 10), 
+                     label = c("1950", "'60", "'70", "'80", "'90", "2000", "'10")) + 
+  
+  # Set y-axis ticks to begin at rolling two-term average age 40, to end at
+  # rolling two-term average age 60, and to occur at intervals of 5 years; label
+  # y-axis ticks according to rolling two-term average age
+  
+  scale_y_continuous(breaks = seq(40, 60, by = 5), 
+                     label = c("40", "45", "50", "55", "60 yrs"), 
+                     limits = c(40, 60)) + 
+  
+  # Give plot title, subtitle, and caption; I added "FIVETHIRTYEIGHT PACKAGE" to
+  # "SOURCE:" in the caption to give credit to FiveThirtyEight in my graphic
+  
+  labs(title = "Average Age of New Members of Congress", 
+       subtitle = "Rolling two-term average at start of term, 1949-2013", 
+       caption = "SOURCE: FIVETHIRTYEIGHT PACKAGE / GOVTRACK, THE NEW YORK TIMES, SUNLIGHT FOUNDATION") + 
+  
+  # Annotate plot so that it is clear that the blue line corresponds to
+  # "Democrats"; position (along the axes), resize, color, and style annotation
+  # so that the word "Democrats" appears on the plot in bolded blue "Courier"
+  # font
+  
+  annotate("text", x = 2004, y = 52.25, 
+           size = 4, color = "#008FD5", family = "Courier", 
+           label = "paste(bold(Democrats))", parse = TRUE) +  
+  
+  # Annotate plot so that it is clear that the red line corresponds to
+  # "Republicans"; position (along the axes), resize, color, and style
+  # annotation so that the word "Republicans" appears on the plot in bolded red
+  # "Courier" font
+  
+  annotate("text", x = 1968.5, y = 47.75, 
+           size = 4, color = "#FF2700", family = "Courier", 
+           label = "paste(bold(Republicans))", parse = TRUE) + 
+  
+  # Apply FiveThirtyEight scales and colors to plot
+  
+  scale_color_fivethirtyeight() + 
+  
+  # Apply FiveThirtyEight theme to plot
+  
+  theme_fivethirtyeight() + 
+  
+  # Left-align plot title and subtitle, right-align caption, set axis tick font
+  # to "Courier"
+  
+  theme(plot.title = element_text(hjust = -0.26), 
+        plot.subtitle = element_text(hjust = -0.11), 
+        plot.caption = element_text(hjust = 1, 
+                                    size = 7), 
+        axis.text.x = element_text(family = "Courier"), 
+        axis.text.y = element_text(family = "Courier"))
+
+```
